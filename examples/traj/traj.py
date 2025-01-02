@@ -62,7 +62,7 @@ def main(use_rho_adaptation=False):
 
     # Cost matrices
     max_dev_x = np.array([
-        0.01, 0.01, 0.01,    # position (tighter)
+        0.01, 0.01, 0.0001,    # position (tighter)
         0.5, 0.5, 0.05,      # attitude 
         0.5, 0.5, 0.5,       # velocity
         0.7, 0.7, 0.5        # angular velocity
@@ -74,7 +74,7 @@ def main(use_rho_adaptation=False):
 
     # Setup PC
     N = 20
-    initial_rho = 5.0
+    initial_rho = 1.0
     
     # Initialize MPC
     mpc = TinyMPC(
@@ -89,7 +89,7 @@ def main(use_rho_adaptation=False):
 
    
     if use_rho_adaptation:
-        rho_adapter = RhoAdapter(rho_base=initial_rho, rho_min=0.1, rho_max=20.0)
+        rho_adapter = RhoAdapter(rho_base=initial_rho, rho_min=1.0, rho_max=20.0)
         mpc.rho_adapter = rho_adapter
         mpc.rho_adapter.initialize_derivatives(mpc.cache)
        
@@ -117,13 +117,13 @@ def main(use_rho_adaptation=False):
 
 
     u_nom = np.zeros((quad.nu, mpc.N-1))
-    u_nom[:] = ug.reshape(-1,1)
+    u_nom[:] = ug.reshape(-1,1)  # Just use hover thrust
 
     
-    t0 = 0.0
-    for i in range(mpc.N-1):
-        t = t0 + i*quad.dt
-        u_nom[:,i] = trajectory.compute_nominal_control(t, quad)
+    # t0 = 0.0
+    # for i in range(mpc.N-1):
+    #     t = t0 + i*quad.dt
+    #     u_nom[:,i] = trajectory.compute_nominal_control(t, quad)
 
     # Debug prints
     print("\nNominal control check:")
