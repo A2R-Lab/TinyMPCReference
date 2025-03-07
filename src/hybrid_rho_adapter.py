@@ -322,203 +322,167 @@ class HybridRhoAdapter:
             self.rho_history.append(self.fixed_rhos[new_idx])
             return self.fixed_rhos[new_idx]
 
-    def select_rho_for_trajectory(self, state, iteration):
-        """Select appropriate rho based on iteration and recent performance"""
-        self.solve_count = iteration
+    # def select_rho_for_trajectory(self, state, iteration):
+    #     """Select appropriate rho based on iteration and recent performance"""
+    #     self.solve_count = iteration
         
-        # Performance-based selection strategy
-        if len(self.pri_res_history) > 5:
-            recent_progress = self.pri_res_history[-1] / (self.pri_res_history[-5] + 1e-10)
+    #     # Performance-based selection strategy
+    #     if len(self.pri_res_history) > 5:
+    #         recent_progress = self.pri_res_history[-1] / (self.pri_res_history[-5] + 1e-10)
             
-            # If convergence is slowing down, switch to adaptive
-            if recent_progress > 0.7:  # Not converging quickly enough
-                self.is_adaptive_active = True
-                # Choose which adaptive rho to use
-                self.current_adaptive_idx = iteration % self.n_adaptive
-                return self.adaptive_rhos[self.current_adaptive_idx]
+    #         # If convergence is slowing down, switch to adaptive
+    #         if recent_progress > 0.7:  # Not converging quickly enough
+    #             self.is_adaptive_active = True
+    #             # Choose which adaptive rho to use
+    #             self.current_adaptive_idx = iteration % self.n_adaptive
+    #             return self.adaptive_rhos[self.current_adaptive_idx]
         
-        # Simple alternating strategy if no performance data yet
-        if iteration % 10 < 5:
-            # Use fixed rho set
-            self.is_adaptive_active = False
-            self.current_fixed_idx = (iteration // 10) % self.n_fixed
-            return self.fixed_rhos[self.current_fixed_idx]
-        else:
-            # Use adaptive rho set
-            self.is_adaptive_active = True
-            self.current_adaptive_idx = (iteration // 10) % self.n_adaptive
-            return self.adaptive_rhos[self.current_adaptive_idx]
-
-    # def update_matrices(self, cache, new_rho):
-    #     """Update matrices using different strategies based on rho type"""
-    #     old_rho = cache['rho']
-
-    #     return {'rho': new_rho}
-
-
-    # def update_matrices(self, cache, new_rho):
-    #     """Update matrices using different strategies based on rho type"""
-    #     old_rho = cache['rho']
-        
-    #     # If rho hasn't changed much, skip the update
-    #     if abs(new_rho - old_rho) < 1e-6:
-    #         return {'rho': new_rho}
-        
-    #     # STRATEGY 1: For fixed rho values, use pre-computed matrices (fast lookup)
-    #     if new_rho in self.fixed_matrices:
-    #         matrices = self.fixed_matrices[new_rho]
-    #         updates = {
-    #             'rho': new_rho,
-    #             'Kinf': matrices['Kinf'],
-    #             'Pinf': matrices['Pinf'],
-    #             'C1': matrices['C1'],
-    #             'C2': matrices['C2']
-    #         }
-    #         return updates
-        
-    #     # STRATEGY 2: For adaptive rho values, use Taylor approximation with bounds
-    #     # Limit rho change per step to avoid numerical issues
-    #     max_step = min(1.0, old_rho * 0.2)  # Smaller step for smaller rho values
-    #     if abs(new_rho - old_rho) > max_step:
-    #         delta_rho = max_step * np.sign(new_rho - old_rho)
-    #         new_rho = old_rho + delta_rho
+    #     # Simple alternating strategy if no performance data yet
+    #     if iteration % 10 < 5:
+    #         # Use fixed rho set
+    #         self.is_adaptive_active = False
+    #         self.current_fixed_idx = (iteration // 10) % self.n_fixed
+    #         return self.fixed_rhos[self.current_fixed_idx]
     #     else:
-    #         delta_rho = new_rho - old_rho
-        
-    #     # Find closest pre-computed derivative
-    #     closest_deriv_rho = min(self.derivatives.keys(), key=lambda x: abs(x - old_rho))
-    #     derivs = self.derivatives[closest_deriv_rho]
-        
-    #     # Apply Taylor update with bounds checking
-    #     Kinf_update = cache['Kinf'] + delta_rho * derivs['dKinf_drho']
-    #     Pinf_update = cache['Pinf'] + delta_rho * derivs['dPinf_drho']
-    #     C1_update = cache['C1'] + delta_rho * derivs['dC1_drho']
-    #     C2_update = cache['C2'] + delta_rho * derivs['dC2_drho']
-        
-    #     # Check for extreme values and bound them
-    #     def bound_matrix(matrix, name, max_val=1e3):
-    #         if np.any(np.abs(matrix) > max_val):
-    #             print(f"Warning: Large values in {name}, applying bounds")
-    #             return np.clip(matrix, -max_val, max_val)
-    #         return matrix
-        
-    #     # Apply bounds to all updated matrices
-    #     Kinf_update = bound_matrix(Kinf_update, 'Kinf')
-    #     Pinf_update = bound_matrix(Pinf_update, 'Pinf')
-    #     C1_update = bound_matrix(C1_update, 'C1')
-    #     C2_update = bound_matrix(C2_update, 'C2')
+    #         # Use adaptive rho set
+    #         self.is_adaptive_active = True
+    #         self.current_adaptive_idx = (iteration // 10) % self.n_adaptive
+    #         return self.adaptive_rhos[self.current_adaptive_idx]
+
+    # def update_matrices(self, cache, new_rho):
+    #     old_rho = cache['rho']
+    #     delta_rho = new_rho - old_rho
         
     #     updates = {
     #         'rho': new_rho,
-    #         'Kinf': Kinf_update,
-    #         'Pinf': Pinf_update,
-    #         'C1': C1_update,
-    #         'C2': C2_update
+    #         'Kinf': cache['Kinf'] + delta_rho * cache['dKinf_drho'],
+    #         'Pinf': cache['Pinf'] + delta_rho * cache['dPinf_drho'],
+    #         'C1': cache['C1'] + delta_rho * cache['dC1_drho'],
+    #        # 'C2': cache['C2'] + delta_rho * cache['dC2_drho']
     #     }
+
+
     #     return updates
 
+
     def update_matrices(self, cache, new_rho):
-        """Update with fallback mechanism"""
+        """Update matrices using different strategies based on rho type"""
         old_rho = cache['rho']
         
-        try:
-            # If rho hasn't changed much, skip the update
-            if abs(new_rho - old_rho) < 1e-6:
-                return {'rho': new_rho}
-            
-            # STRATEGY 1: For fixed rho values, use pre-computed matrices
-            if new_rho in self.fixed_matrices:
-                matrices = self.fixed_matrices[new_rho]
-                return {
-                    'rho': new_rho,
-                    'Kinf': matrices['Kinf'],
-                    'Pinf': matrices['Pinf'],
-                    'C1': matrices['C1'],
-                    'C2': matrices['C2']
-                }
-            
-            # Limit rho change
-            max_step = min(1.0, old_rho * 0.2)
-            if abs(new_rho - old_rho) > max_step:
-                delta_rho = max_step * np.sign(new_rho - old_rho)
-                new_rho = old_rho + delta_rho
-            else:
-                delta_rho = new_rho - old_rho
-            
-            # Find closest pre-computed derivative
-            closest_deriv_rho = min(self.derivatives.keys(), key=lambda x: abs(x - old_rho))
-            derivs = self.derivatives[closest_deriv_rho]
-            
-            # Apply Taylor update
-            Kinf_update = cache['Kinf'] + delta_rho * derivs['dKinf_drho']
-            Pinf_update = cache['Pinf'] + delta_rho * derivs['dPinf_drho']
-            C1_update = cache['C1'] + delta_rho * derivs['dC1_drho']
-            C2_update = cache['C2'] + delta_rho * derivs['dC2_drho']
-            
-            # Test the updated matrices for numerical stability
-            # Just check for NaN or Inf values
-            if (np.any(np.isnan(Kinf_update)) or np.any(np.isinf(Kinf_update)) or
-                np.any(np.isnan(Pinf_update)) or np.any(np.isinf(Pinf_update)) or
-                np.any(np.isnan(C1_update)) or np.any(np.isinf(C1_update)) or
-                np.any(np.isnan(C2_update)) or np.any(np.isinf(C2_update))):
-                raise RuntimeError("NaN or Inf values detected in Taylor updates")
-                
-            return {
-                'rho': new_rho,
-                'Kinf': Kinf_update,
-                'Pinf': Pinf_update,
-                'C1': C1_update,
-                'C2': C2_update
-            }
-            
-        except Exception as e:
-            print(f"Taylor update failed: {e}, falling back to unchanged matrices")
-            # Fallback: only update rho, keep matrices unchanged
+        # If rho hasn't changed much, skip the update
+        if abs(new_rho - old_rho) < 1e-6:
             return {'rho': new_rho}
         
-        # # If rho hasn't changed much, skip the update
-        # if abs(new_rho - old_rho) < 1e-6:
-        #     return {'rho': new_rho}
+        # STRATEGY 1: For fixed rho values, use pre-computed matrices (fast lookup)
+        if new_rho in self.fixed_matrices:
+            matrices = self.fixed_matrices[new_rho]
+            updates = {
+                'rho': new_rho,
+                'Kinf': matrices['Kinf'],
+                'Pinf': matrices['Pinf'],
+                'C1': matrices['C1'],
+                'C2': matrices['C2']
+            }
+            return updates
         
-        # # STRATEGY 1: For fixed rho values, use pre-computed matrices (fast lookup)
-        # if new_rho in self.fixed_matrices:
-        #     matrices = self.fixed_matrices[new_rho]
-        #     updates = {
-        #         'rho': new_rho,
-        #         'Kinf': matrices['Kinf'],
-        #         'Pinf': matrices['Pinf'],
-        #         'C1': matrices['C1'],
-        #         'C2': matrices['C2']
-        #     }
-        #     return updates
+        # STRATEGY 2: For adaptive rho values, use Taylor approximation with bounds
+        # Limit rho change per step to avoid numerical issues
+        max_step = min(1.0, old_rho * 0.2)  # Smaller step for smaller rho values
+        if abs(new_rho - old_rho) > max_step:
+            delta_rho = max_step * np.sign(new_rho - old_rho)
+            new_rho = old_rho + delta_rho
+        else:
+            delta_rho = new_rho - old_rho
         
-        # # STRATEGY 2: For adaptive rho values, use Taylor approximation if derivatives available
-        # if new_rho in self.derivatives:
-        #     # Use Taylor update with pre-computed derivatives
-        #     delta_rho = new_rho - old_rho
-        #     derivs = self.derivatives[new_rho]
-            
-        #     updates = {
-        #         'rho': new_rho,
-        #         'Kinf': cache['Kinf'] + delta_rho * derivs['dKinf_drho'],
-        #         'Pinf': cache['Pinf'] + delta_rho * derivs['dPinf_drho'],
-        #         'C1': cache['C1'] + delta_rho * derivs['dC1_drho'],
-        #         'C2': cache['C2'] + delta_rho * derivs['dC2_drho']
-        #     }
-        #     return updates
+        # Find closest pre-computed derivative
+        closest_deriv_rho = min(self.derivatives.keys(), key=lambda x: abs(x - old_rho))
+        derivs = self.derivatives[closest_deriv_rho]
         
-        # # STRATEGY 3: For adaptive values without pre-computed derivatives, find closest
-        # # derivative and use that for Taylor update
-        # closest_deriv_rho = min(self.derivatives.keys(), key=lambda x: abs(x - new_rho))
-        # derivs = self.derivatives[closest_deriv_rho]
-        # delta_rho = new_rho - old_rho
+        # Apply Taylor update with bounds checking
+        Kinf_update = cache['Kinf'] + delta_rho * derivs['dKinf_drho']
+        Pinf_update = cache['Pinf'] + delta_rho * derivs['dPinf_drho']
+        C1_update = cache['C1'] + delta_rho * derivs['dC1_drho']
+        C2_update = cache['C2'] + delta_rho * derivs['dC2_drho']
         
-        # updates = {
-        #     'rho': new_rho,
-        #     'Kinf': cache['Kinf'] + delta_rho * derivs['dKinf_drho'],
-        #     'Pinf': cache['Pinf'] + delta_rho * derivs['dPinf_drho'],
-        #     'C1': cache['C1'] + delta_rho * derivs['dC1_drho'],
-        #     'C2': cache['C2'] + delta_rho * derivs['dC2_drho']
-        # }
-        # return updates
+        # # Check for extreme values and bound them
+        def bound_matrix(matrix, name, max_val=1e3):
+            if np.any(np.abs(matrix) > max_val):
+                print(f"Warning: Large values in {name}, applying bounds")
+                return np.clip(matrix, -max_val, max_val)
+            return matrix
+        
+        # Apply bounds to all updated matrices
+        Kinf_update = bound_matrix(Kinf_update, 'Kinf')
+        Pinf_update = bound_matrix(Pinf_update, 'Pinf')
+        C1_update = bound_matrix(C1_update, 'C1')
+        C2_update = bound_matrix(C2_update, 'C2')
+        
+        updates = {
+            'rho': new_rho,
+            'Kinf': Kinf_update,
+            'Pinf': Pinf_update,
+            'C1': C1_update,
+            'C2': C2_update
+        }
+        return updates
 
+    # def update_matrices(self, cache, new_rho):
+    #     """Update with fallback mechanism"""
+    #     old_rho = cache['rho']
+        
+    #     try:
+    #         # If rho hasn't changed much, skip the update
+    #         if abs(new_rho - old_rho) < 1e-6:
+    #             return {'rho': new_rho}
+            
+    #         # STRATEGY 1: For fixed rho values, use pre-computed matrices
+    #         if new_rho in self.fixed_matrices:
+    #             matrices = self.fixed_matrices[new_rho]
+    #             return {
+    #                 'rho': new_rho,
+    #                 'Kinf': matrices['Kinf'],
+    #                 'Pinf': matrices['Pinf'],
+    #                 'C1': matrices['C1'],
+    #                 'C2': matrices['C2']
+    #             }
+            
+    #         # Limit rho change
+    #         max_step = min(1.0, old_rho * 0.2)
+    #         if abs(new_rho - old_rho) > max_step:
+    #             delta_rho = max_step * np.sign(new_rho - old_rho)
+    #             new_rho = old_rho + delta_rho
+    #         else:
+    #             delta_rho = new_rho - old_rho
+            
+    #         # Find closest pre-computed derivative
+    #         closest_deriv_rho = min(self.derivatives.keys(), key=lambda x: abs(x - old_rho))
+    #         derivs = self.derivatives[closest_deriv_rho]
+            
+    #         # Apply Taylor update
+    #         Kinf_update = cache['Kinf'] + delta_rho * derivs['dKinf_drho']
+    #         Pinf_update = cache['Pinf'] + delta_rho * derivs['dPinf_drho']
+    #         C1_update = cache['C1'] + delta_rho * derivs['dC1_drho']
+    #         C2_update = cache['C2'] + delta_rho * derivs['dC2_drho']
+            
+    #         # Test the updated matrices for numerical stability
+    #         # Just check for NaN or Inf values
+    #         if (np.any(np.isnan(Kinf_update)) or np.any(np.isinf(Kinf_update)) or
+    #             np.any(np.isnan(Pinf_update)) or np.any(np.isinf(Pinf_update)) or
+    #             np.any(np.isnan(C1_update)) or np.any(np.isinf(C1_update)) or
+    #             np.any(np.isnan(C2_update)) or np.any(np.isinf(C2_update))):
+    #             raise RuntimeError("NaN or Inf values detected in Taylor updates")
+                
+    #         return {
+    #             'rho': new_rho,
+    #             'Kinf': Kinf_update,
+    #             'Pinf': Pinf_update,
+    #             'C1': C1_update,
+    #             'C2': C2_update
+    #         }
+            
+    #     except Exception as e:
+    #         print(f"Taylor update failed: {e}, falling back to unchanged matrices")
+    #         # Fallback: only update rho, keep matrices unchanged
+    #         return {'rho': new_rho}
+        
+       

@@ -18,7 +18,7 @@ class RhoAdapter:
 
     def initialize_derivatives(self, cache, eps=1e-4):
         """Initialize derivatives using autodiff"""
-        print("Computing LQR sensitivity")
+        #print("Computing LQR sensitivity")
         
         def lqr_direct(rho):
             R_rho = cache['R'] + rho * np.eye(cache['R'].shape[0])
@@ -27,7 +27,7 @@ class RhoAdapter:
             
             # Compute Pgit ad
             P = Q
-            for _ in range(10):
+            for _ in range(100):
                 K = np.linalg.inv(R_rho + B.T @ P @ B) @ B.T @ P @ A
                 P = Q + A.T @ P @ (A - B @ K)
             
@@ -53,126 +53,147 @@ class RhoAdapter:
         cache['dC1_drho'] = derivs[k_size+p_size:k_size+p_size+c1_size].reshape(m, m)
         cache['dC2_drho'] = derivs[k_size+p_size+c1_size:].reshape(n, n)
 
-    def format_matrices(self, x_prev, u_prev, v_prev, z_prev, g_prev, y_prev, cache, N):
-        """Format matrices into the form needed for residual computation"""
-        nx = x_prev.shape[0]  # Should be 12
-        nu = u_prev.shape[0]  # Should be 4
+   
+
+    def initialize_format_matrices(self, nx, nu, N):
+        """Pre-allocate matrices during initialization to avoid repeated allocation"""
+        # Calculate dimensions
+        x_decision_size = nx * N + nu * (N-1)
+        constraint_rows = (nx + nu) * (N-1)
         
-        # Reshape inputs to ensure correct dimensions
-        x_prev = x_prev.reshape(nx, -1)  
-        u_prev = u_prev.reshape(nu, -1)
-        v_prev = v_prev.reshape(nx, -1)
-        z_prev = z_prev.reshape(nu, -1)
+        # Pre-allocate matrices once
+        self.A_matrix = np.zeros((constraint_rows, x_decision_size))
+        self.z_vector = np.zeros((constraint_rows, 1))
+        self.y_vector = np.zeros((constraint_rows, 1))
+        self.x_decision = np.zeros((x_decision_size, 1))
+        
+        # Pre-compute P matrix structure (will be filled with actual values later)
+        self.P_matrix = np.zeros((x_decision_size, x_decision_size))
+        self.q_vector = np.zeros((x_decision_size, 1))
+        
+        # Store dimensions for reuse
+        self.format_nx = nx
+        self.format_nu = nu
+        self.format_N = N
 
-       
-        # # Also let's see the actual values in cache
-        # print("\nCache contents:")
-        # for key, value in cache.items():
-        #     if isinstance(value, np.ndarray):
-        #         print(f"{key} shape:", value.shape)
+    def format_matrices(self, x_prev, u_prev, v_prev, z_prev, g_prev, y_prev, cache, N):
+        """Memory-optimized matrix formatting"""
 
-        # 1. Form decision variable x (should be Nx*N + Nu*(N-1))
-        x_decision = []
+        if not hasattr(self, 'format_nx'):
+            self.initialize_format_matrices(x_prev.shape[0], u_prev.shape[0], N)
+
+        nx, nu = self.format_nx, self.format_nu
+        
+        # Fill x_decision in-place
+        x_idx = 0
         for i in range(N):
-            x_decision.append(x_prev[:, i].reshape(-1, 1))
+            self.x_decision[x_idx:x_idx+nx, 0] = x_prev[:, i]
+            x_idx += nx
             if i < N-1:
-                x_decision.append(u_prev[:, i].reshape(-1, 1))
-        x = np.vstack(x_decision)
-
-        # 2. Form constraint matrices
-        A_dynamics = []
-        A_inputs = []
-        A_base = cache['A']
-        B_base = cache['B']
-
-        #print(f"A_base: {A_base.shape}, B_base: {B_base.shape}")
-
+                self.x_decision[x_idx:x_idx+nu, 0] = u_prev[:, i]
+                x_idx += nu
+        
+        # Fill A matrix in-place (reuse without recreating)
+        A_base, B_base = cache['A'], cache['B']
+        
+        # Clear A matrix for reuse
+        self.A_matrix.fill(0)
+        
+        # Fill in dynamics and input constraints
         for i in range(N-1):
-            # Dynamics constraints
-            dyn_block = np.zeros((nx, (nx+nu)*(N-1) + nx))
-            col_idx = i*(nx+nu)
-            dyn_block[:, col_idx:col_idx+nx] = A_base
-            dyn_block[:, col_idx+nx:col_idx+nx+nu] = B_base
-            dyn_block[:, col_idx+nx+nu:col_idx+2*nx+nu] = -np.eye(nx)
-            A_dynamics.append(dyn_block)
-            
             # Input constraints
-            input_block = np.zeros((nu, (nx+nu)*(N-1) + nx))
-            input_block[:, col_idx+nx:col_idx+nx+nu] = np.eye(nu)
-            A_inputs.append(input_block)
-
-        A = np.vstack([np.vstack(A_inputs), np.vstack(A_dynamics)])
-
-        # 3. Form z vector
-        z_inputs = []
-        z_dynamics = []
+            row_start = i * nu
+            col_start = i * (nx+nu) + nx
+            self.A_matrix[row_start:row_start+nu, col_start:col_start+nu] = np.eye(nu)
+            
+            # Dynamics constraints
+            row_start = (N-1) * nu + i * nx
+            col_start = i * (nx+nu)
+            self.A_matrix[row_start:row_start+nx, col_start:col_start+nx] = A_base
+            self.A_matrix[row_start:row_start+nx, col_start+nx:col_start+nx+nu] = B_base
+            
+            next_state_idx = col_start + nx + nu
+            if next_state_idx < self.A_matrix.shape[1]:
+                self.A_matrix[row_start:row_start+nx, next_state_idx:next_state_idx+nx] = -np.eye(nx)
+        
+        # Fill z and y vectors in-place
         for i in range(N-1):
-            z_inputs.append(z_prev[:, i].reshape(-1, 1))
-            z_dynamics.append(v_prev[:, i].reshape(-1, 1))
-        z = np.vstack([np.vstack(z_inputs), np.vstack(z_dynamics)])
-
-        # 4. Form y vector
-        y_inputs = []
-        y_dynamics = []
-        for i in range(N-1):
-            y_inputs.append(y_prev[:, i].reshape(-1, 1))
-            y_dynamics.append(g_prev[:, i].reshape(-1, 1))
-        y = np.vstack([np.vstack(y_inputs), np.vstack(y_dynamics)])
-
-        # 5. Form cost matrix P
-        Q = cache['Q']
-        R = cache['R']
-
-        P_blocks = []
+            self.z_vector[i*nu:(i+1)*nu, 0] = z_prev[:, i]
+            self.z_vector[(N-1)*nu+i*nx:(N-1)*nu+(i+1)*nx, 0] = v_prev[:, i]
+            
+            self.y_vector[i*nu:(i+1)*nu, 0] = y_prev[:, i]
+            self.y_vector[(N-1)*nu+i*nx:(N-1)*nu+(i+1)*nx, 0] = g_prev[:, i]
+        
+        # Build P matrix (cost matrix) - reuse same structure
+        Q, R = cache['Q'], cache['R']
+        
+        # Clear P matrix for reuse
+        self.P_matrix.fill(0)
+        
+        # Fill diagonal blocks
+        x_idx = 0
         for i in range(N):
+            # State cost
+            self.P_matrix[x_idx:x_idx+nx, x_idx:x_idx+nx] = Q
+            x_idx += nx
+            
+            # Input cost
             if i < N-1:
-                P_block = block_diag(Q, R)
-            else:
-                P_block = Q
-            P_blocks.append(P_block)
-        P = block_diag(*P_blocks)
-
-        # # 6. Form cost vector q (zero for now)
-        # print(f"xg: {xg.shape}")
-        # print("xg[:12]:", xg[:12])
-        # print("uhover:", uhover)
-
-        q_blocks = []
+                self.P_matrix[x_idx:x_idx+nu, x_idx:x_idx+nu] = R
+                x_idx += nu
+        
+        # Create q vector (linear cost vector)
+        x_idx = 0
         for i in range(N):
-            # For hover, reference is just xg
             delta_x = x_prev[:, i] - xg[:12]
-            q_x = Q @ delta_x.reshape(-1, 1)
+            self.q_vector[x_idx:x_idx+nx, 0] = Q @ delta_x
+            x_idx += nx
+            
             if i < N-1:
-                # For hover, reference input is uhover
                 delta_u = u_prev[:, i] - uhover
-                q_u = R @ delta_u.reshape(-1, 1)
-                q_blocks.extend([q_x, q_u])
-            else:
-                q_blocks.append(q_x)
-        q = np.vstack(q_blocks)
-
-        return x, A, z, y, P, q
+                self.q_vector[x_idx:x_idx+nu, 0] = R @ delta_u
+                x_idx += nu
+        
+        # print(f"A: {self.A_matrix.shape}")
+        # print(f"z: {self.z_vector.shape}")
+        # print(f"y: {self.y_vector.shape}")
+        # print(f"P: {self.P_matrix.shape}")
+        # print(f"q: {self.q_vector.shape}")
+        
+        return self.x_decision, self.A_matrix, self.z_vector, self.y_vector, self.P_matrix, self.q_vector
 
     def compute_residuals(self, x, A, z, y, P, q):
-        """Compute ADMM residuals"""
-        # Primal residual        
-        Ax = A @ x
-        r_prim = Ax - z
-        pri_res = np.linalg.norm(r_prim, ord=np.inf)
-        pri_norm = max(np.linalg.norm(Ax, ord=np.inf), 
-                      np.linalg.norm(z, ord=np.inf))
-
-        # Dual residual
-        r_dual = P @ x + q + A.T @ y
-        dual_res = np.linalg.norm(r_dual, ord=np.inf)
-
-        # Normalization terms
-        Px = P @ x
-        ATy = A.T @ y
-        dual_norm = max(np.linalg.norm(Px, ord=np.inf),
-                       np.linalg.norm(ATy, ord=np.inf),
-                       np.linalg.norm(q, ord=np.inf))
-
+        """Memory-optimized residual computation"""
+        # Pre-allocate vectors for intermediate results
+        if not hasattr(self, 'Ax_vector'):
+            self.Ax_vector = np.zeros_like(z)
+            self.r_prim_vector = np.zeros_like(z)
+            self.r_dual_vector = np.zeros_like(x)
+            self.Px_vector = np.zeros_like(x)
+            self.ATy_vector = np.zeros_like(x)
+        
+        # Compute Ax directly into pre-allocated array
+        np.matmul(A, x, out=self.Ax_vector)
+        
+        # Compute primal residual
+        np.subtract(self.Ax_vector, z, out=self.r_prim_vector)
+        pri_res = np.max(np.abs(self.r_prim_vector))
+        pri_norm = max(np.max(np.abs(self.Ax_vector)), np.max(np.abs(z)))
+        
+        # Compute dual residual components
+        np.matmul(P, x, out=self.Px_vector)
+        np.matmul(A.T, y, out=self.ATy_vector)
+        
+        
+        # Compute full dual residual
+        self.r_dual_vector = self.Px_vector + q + self.ATy_vector
+        dual_res = np.max(np.abs(self.r_dual_vector))
+        
+        # Compute normalization
+        dual_norm = max(np.max(np.abs(self.Px_vector)), 
+                    np.max(np.abs(self.ATy_vector)), 
+                    np.max(np.abs(q)))
+        
         return pri_res, dual_res, pri_norm, dual_norm
 
     def predict_rho(self, pri_res, dual_res, pri_norm, dual_norm, current_rho):
@@ -188,6 +209,8 @@ class RhoAdapter:
 
         rho_new = np.clip(rho_new, self.rho_min, self.rho_max)
 
+        return rho_new
+
 
         # if rho_new >= 1.2*current_rho or rho_new <= current_rho/1.2:
         #     return rho_new
@@ -200,16 +223,29 @@ class RhoAdapter:
 
     def update_matrices(self, cache, new_rho):
         """Update matrices using derivatives stored in cache"""
+        #("Updating matrices")
         old_rho = cache['rho']
         delta_rho = new_rho - old_rho
+
+        if 'dKinf_drho' not in cache:
+            self.initialize_derivatives(cache)
         
         updates = {
             'rho': new_rho,
             'Kinf': cache['Kinf'] + delta_rho * cache['dKinf_drho'],
             'Pinf': cache['Pinf'] + delta_rho * cache['dPinf_drho'],
             'C1': cache['C1'] + delta_rho * cache['dC1_drho'],
-            'C2': cache['C2'] + delta_rho * cache['dC2_drho']
+           'C2': cache['C2'] + delta_rho * cache['dC2_drho']
+           #'C2': cache['C2']
         }
+
+        # #return same cache
+        # updates = {'rho': new_rho,
+        # 'Kinf': cache['Kinf'] + delta_rho * cache['dKinf_drho'],
+        # 'Pinf': cache['Pinf'] + delta_rho * cache['dPinf_drho'],
+        # 'C1': cache['C1'] + delta_rho * cache['dC1_drho'],
+        # 'C2': cache['C2']
+        # }
         
         return updates
 
