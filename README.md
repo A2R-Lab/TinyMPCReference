@@ -1,6 +1,5 @@
 # TinyMPCReference
-A reference implementation of TinyMPC in pure Python
-
+A reference implementation of TinyMPC in pure Python. The original C++ implementation can be found [here](https://github.com/TinyMPC/TinyMPC) . 
 
 ## Features
 
@@ -75,4 +74,4 @@ python3 examples/traj/traj.py --wind
 
 ## Contact
 
-For any questions/concerns, please contact the developers of this repository at [iam2141@columbia.edu](mailto:iam2141@columbia.edu)
+For any questions/concerns, free free to open issues/PRs, or contact the [developers](mailto:iam2141@columbia.edu) of this repository. 
